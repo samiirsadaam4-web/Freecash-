@@ -110,6 +110,72 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=main_keyboard()
     )
 
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    row = get_user(user_id)
+
+    if not row:
+        ensure_user(user_id, query.from_user.username)
+        row = get_user(user_id)
+
+    data = query.data
+
+    if data == "balance":
+        usd = row["points"] / POINTS_PER_DOLLAR
+        text = f"💰 **Your Balance Details**\n\n" \
+               f"• Points: **{row['points']}**\n" \
+               f"• Value: **${usd:.2f}** USD\n\n" \
+               f"Keep inviting friends and completing daily tasks to earn more!"
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_keyboard())
+
+    elif data == "referrals":
+        bot_username = context.bot.username
+        ref_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
+        text = f"👥 **Referral System**\n\n" \
+               f"Earn **{REFERRAL_BONUS} points** for every friend you invite!\n\n" \
+               f"• Total Invited: **{row['referrals']}** friends\n" \
+               f"🔗 **Your Referral Link:**\n`{ref_link}`"
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_keyboard())
+
+    elif data == "daily":
+        today_str = str(date.today())
+        if row["last_daily"] == today_str:
+            text = "⏳ **Daily Bonus**\n\nYou have already claimed your daily bonus today! Come back tomorrow."
+        else:
+            con = db()
+            con.execute("UPDATE users SET points=points+?, last_daily=? WHERE user_id=?", (DAILY_BONUS, today_str, user_id))
+            con.commit()
+            con.close()
+            text = f"🎉 **Daily Bonus Claimed!**\n\nYou received **+{DAILY_BONUS} points**!"
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_keyboard())
+
+    elif data == "tasks":
+        text = "📝 **Available Tasks**\n\n" \
+               "1. 📢 Join Channel (+200 pts)\n" \
+               "2. 👥 Invite 3 Friends (+300 pts)\n\n" \
+               "*(Tasks system will be updated soon with auto-verify!)*"
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_keyboard())
+
+    elif data == "withdraw":
+        usd = row["points"] / POINTS_PER_DOLLAR
+        if row["points"] < MIN_WITHDRAWAL:
+            text = f"💸 **Withdrawal**\n\n" \
+                   f"• Minimum limit: **{MIN_WITHDRAWAL} points** (${MIN_WITHDRAWAL/POINTS_PER_DOLLAR:.2f})\n" \
+                   f"• Current balance: **{row['points']} points** (${usd:.2f})\n\n" \
+                   f"⚠️ You need **{MIN_WITHDRAWAL - row['points']} more points** to withdraw."
+        else:
+            text = f"💸 **Withdrawal**\n\nYou have enough points to withdraw! Send your payment address to Admin."
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_keyboard())
+
+    elif data == "help":
+        text = "ℹ️ **Help & Support**\n\n" \
+               "• Earn points by claiming daily bonuses and inviting friends.\n" \
+               "• 1,000 points = $1.00 USD.\n" \
+               "• For support or inquiries, contact the admin."
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_keyboard())
+
 def main():
     init_db()
     if not TOKEN:
@@ -118,9 +184,11 @@ def main():
 
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_handler))
     
     print("Bot is running...")
     app.run_polling()
 
 if __name__ == "__main__":
     main()
+
