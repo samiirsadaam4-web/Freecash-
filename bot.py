@@ -1,16 +1,23 @@
 import os
 import sqlite3
-from datetime import datetime, date
+from datetime import date
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
 
 TOKEN = os.getenv("BOT_TOKEN", "")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 
 POINTS_PER_DOLLAR = 1000
 REFERRAL_BONUS = 100
 START_BONUS = 50
 DAILY_BONUS = 50
+AD_BONUS = 50
 MIN_WITHDRAWAL = 5000
 
 DB = "bot.db"
@@ -28,16 +35,14 @@ def init_db():
         points INTEGER DEFAULT 0,
         referred_by INTEGER,
         referrals INTEGER DEFAULT 0,
-        last_daily TEXT
+        last_daily TEXT,
+        state TEXT
     )""")
     con.execute("""CREATE TABLE IF NOT EXISTS withdraw_requests(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
         amount_points INTEGER,
-        amount_usd REAL,
-        method TEXT,
         address TEXT,
-        status TEXT DEFAULT 'PENDING',
         created_at TEXT
     )""")
     con.commit()
@@ -49,8 +54,8 @@ def ensure_user(user_id, username, referrer=None):
     if not row:
         valid_ref = referrer if referrer and referrer != user_id else None
         con.execute(
-            "INSERT INTO users (user_id, username, points, referred_by, referrals) VALUES (?, ?, ?, ?, ?)",
-            (user_id, username or "", START_BONUS, valid_ref, 0)
+            "INSERT INTO users (user_id, username, points, referred_by, referrals, state) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, username or "", START_BONUS, valid_ref, 0, "NONE")
         )
         if valid_ref:
             con.execute(
@@ -59,10 +64,7 @@ def ensure_user(user_id, username, referrer=None):
             )
         con.commit()
     else:
-        con.execute(
-            "UPDATE users SET username=? WHERE user_id=?",
-            (username or "", user_id)
-        )
+        con.execute("UPDATE users SET username=? WHERE user_id=?", (username or "", user_id))
         con.commit()
     con.close()
 
@@ -71,6 +73,12 @@ def get_user(user_id):
     row = con.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
     con.close()
     return row
+
+def update_state(user_id, state):
+    con = db()
+    con.execute("UPDATE users SET state=? WHERE user_id=?", (state, user_id))
+    con.commit()
+    con.close()
 
 def main_keyboard():
     return InlineKeyboardMarkup([
@@ -83,7 +91,10 @@ def main_keyboard():
             InlineKeyboardButton("📝 Tasks", callback_data="tasks")
         ],
         [
-            InlineKeyboardButton("💸 Withdraw", callback_data="withdraw"),
+            InlineKeyboardButton("📺 Watch Ads (+50)", callback_data="watch_ads"),
+            InlineKeyboardButton("💸 Withdraw", callback_data="withdraw")
+        ],
+        [
             InlineKeyboardButton("ℹ️ Help", callback_data="help")
         ]
     ])
@@ -102,11 +113,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     row = get_user(user.id)
 
     await update.message.reply_text(
-        f"👋 Welcome to FreeCash Earn!\n\n"
+        f"👋 **Welcome to FreeCash Earn!**\n\n"
         f"🎁 Starting bonus: {START_BONUS} points\n"
         f"💰 Your balance: {row['points']} points\n"
         f"💵 Value: ${row['points']/POINTS_PER_DOLLAR:.2f}\n\n"
-        f"Invite friends, collect daily bonuses and complete tasks!",
+        f"Invite friends, watch ads, collect daily bonuses and complete tasks!",
+        parse_mode="Markdown",
         reply_markup=main_keyboard()
     )
 
@@ -127,7 +139,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = f"💰 **Your Balance Details**\n\n" \
                f"• Points: **{row['points']}**\n" \
                f"• Value: **${usd:.2f}** USD\n\n" \
-               f"Keep inviting friends and completing daily tasks to earn more!"
+               f"Keep completing tasks and inviting friends to earn more!"
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_keyboard())
 
     elif data == "referrals":
@@ -152,29 +164,87 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_keyboard())
 
     elif data == "tasks":
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📢 Join Channel (+200 pts)", url="https://t.me/telegram")],
+            [InlineKeyboardButton("✅ Claim Task Points", callback_data="claim_task")],
+            [InlineKeyboardButton("🔙 Back", callback_data="back_main")]
+        ])
         text = "📝 **Available Tasks**\n\n" \
-               "1. 📢 Join Channel (+200 pts)\n" \
-               "2. 👥 Invite 3 Friends (+300 pts)\n\n" \
-               "*(Tasks system will be updated soon with auto-verify!)*"
+               "1. Click **Join Channel** and join our official telegram.\n" \
+               "2. Click **Claim Task Points** to get your reward!"
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
+
+    elif data == "claim_task":
+        con = db()
+        con.execute("UPDATE users SET points=points+200 WHERE user_id=?", (user_id,))
+        con.commit()
+        con.close()
+        text = "🎉 **Task Completed!**\n\nYou earned **+200 points**!"
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_keyboard())
+
+    elif data == "watch_ads":
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔗 Open Ad Link", url="https://google.com")],
+            [InlineKeyboardButton("✅ Collect +50 Points", callback_data="claim_ad")],
+            [InlineKeyboardButton("🔙 Back", callback_data="back_main")]
+        ])
+        text = "📺 **Watch & Earn Ads**\n\n" \
+               "1. Click **Open Ad Link** and visit the site for 5 seconds.\n" \
+               "2. Click **Collect +50 Points** to claim your points!"
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
+
+    elif data == "claim_ad":
+        con = db()
+        con.execute("UPDATE users SET points=points+? WHERE user_id=?", (AD_BONUS, user_id))
+        con.commit()
+        con.close()
+        text = f"🎉 **Ad Reward Collected!**\n\nYou received **+{AD_BONUS} points**!"
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_keyboard())
 
     elif data == "withdraw":
         usd = row["points"] / POINTS_PER_DOLLAR
         if row["points"] < MIN_WITHDRAWAL:
             text = f"💸 **Withdrawal**\n\n" \
-                   f"• Minimum limit: **{MIN_WITHDRAWAL} points** (${MIN_WITHDRAWAL/POINTS_PER_DOLLAR:.2f})\n" \
-                   f"• Current balance: **{row['points']} points** (${usd:.2f})\n\n" \
+                   f"• Minimum Limit: **{MIN_WITHDRAWAL} points** (${MIN_WITHDRAWAL/POINTS_PER_DOLLAR:.2f})\n" \
+                   f"• Your Balance: **{row['points']} points** (${usd:.2f})\n\n" \
                    f"⚠️ You need **{MIN_WITHDRAWAL - row['points']} more points** to withdraw."
+            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_keyboard())
         else:
-            text = f"💸 **Withdrawal**\n\nYou have enough points to withdraw! Send your payment address to Admin."
-        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_keyboard())
+            update_state(user_id, "WAITING_WITHDRAW_ADDRESS")
+            text = f"💸 **Withdrawal Request**\n\n" \
+                   f"Your Balance: **{row['points']} points** (${usd:.2f})\n\n" \
+                   f"Please reply with your payment address (e.g., USDT TRC20, Zaad, or eDahab number):"
+            await query.edit_message_text(text, parse_mode="Markdown")
 
-    elif data == "help":
-        text = "ℹ️ **Help & Support**\n\n" \
-               "• Earn points by claiming daily bonuses and inviting friends.\n" \
-               "• 1,000 points = $1.00 USD.\n" \
-               "• For support or inquiries, contact the admin."
-        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_keyboard())
+    elif data == "back_main":
+        await query.edit_message_text("👋 **Main Menu**", parse_mode="Markdown", reply_markup=main_keyboard())
+
+async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    row = get_user(user_id)
+
+    if row and row["state"] == "WAITING_WITHDRAW_ADDRESS":
+        address = update.message.text
+        points = row["points"]
+        usd = points / POINTS_PER_DOLLAR
+
+        con = db()
+        con.execute(
+            "INSERT INTO withdraw_requests (user_id, amount_points, address, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, points, address, str(date.today()))
+        )
+        con.execute("UPDATE users SET points=0, state='NONE' WHERE user_id=?", (user_id,))
+        con.commit()
+        con.close()
+
+        await update.message.reply_text(
+            f"✅ **Withdrawal Submitted!**\n\n"
+            f"• Points Deducted: **{points}** (${usd:.2f})\n"
+            f"• Address/Number: `{address}`\n\n"
+            f"Your request is being processed by the admin.",
+            parse_mode="Markdown",
+            reply_markup=main_keyboard()
+        )
 
 def main():
     init_db()
@@ -185,6 +255,7 @@ def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
     
     print("Bot is running...")
     app.run_polling()
