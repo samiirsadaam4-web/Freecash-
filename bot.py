@@ -29,15 +29,33 @@ Thread(target=run_health_check_server, daemon=True).start()
 
 TOKEN = os.getenv("BOT_TOKEN", "")
 
-# 🔒 BADALADDA QAABKA LACAG QAADASHADA (XADDIDAAD)
-POINTS_PER_DOLLAR = 1000
-REFERRAL_BONUS = 20      # La hoos u dhigay (Ahaay 100)
-START_BONUS = 10         # La hoos u dhigay (Ahaay 50)
-DAILY_BONUS = 10         # La hoos u dhigay (Ahaay 50)
-TASK_BONUS = 50          # La hoos u dhigay (Ahaay 500)
-MIN_WITHDRAWAL = 20000   # 🔒 Loo kordhiyay $20 (20,000 Points) si aan lacag laga dhacaan ahayn looga qaadan!
+# ==============================================================================
+# ⚙️ SETTINGS - HAGAISHA BOT-KA IYO BUTEENADA CUSUB
+# ==============================================================================
+BOT_NAME = "FreeCash Earn Pro"
+POINTS_PER_DOLLAR = 1000   # 1000 points = $1 USD
 
-CHANNEL_LINK = "https://t.me/telegram"
+# ADMIN TELEGRAM ID (Geli ID-gaaga Telegram-ka si ay fariimaha Withdrawal-ka u soo dhacaan)
+ADMIN_ID = 123456789       # 👈 KU BADAL TELEGRAM USER ID-GAAGA!
+
+# BONUSES & LIMITS
+START_BONUS = 20           
+DAILY_BONUS = 15           
+REFERRAL_BONUS = 30        
+TASK_BONUS = 50            
+MIN_WITHDRAWAL = 10000     # $10 Minimum Withdrawal (10,000 Points)
+
+# TASK & ADS LINKS (Shirkadaha & Ads-ka)
+CHANNEL_1 = "https://t.me/telegram"
+CHANNEL_2 = "https://t.me/durov"
+WEBSITE_TASK = "https://google.com"
+
+# MONETAG / DIRECT ADS LINKS
+AD_LINK_1 = "https://google.com" # Geli Monetag Direct Link 1
+AD_LINK_2 = "https://google.com" # Geli Monetag Direct Link 2
+AD_LINK_3 = "https://google.com" # Geli Monetag Direct Link 3
+# ==============================================================================
+
 DB = "bot.db"
 
 def db():
@@ -54,7 +72,9 @@ def init_db():
         referred_by INTEGER,
         referrals INTEGER DEFAULT 0,
         last_daily TEXT,
-        task_completed INTEGER DEFAULT 0,
+        task1 INTEGER DEFAULT 0,
+        task2 INTEGER DEFAULT 0,
+        task3 INTEGER DEFAULT 0,
         state TEXT DEFAULT 'NONE'
     )""")
     con.execute("""CREATE TABLE IF NOT EXISTS withdraw_requests(
@@ -73,7 +93,7 @@ def ensure_user(user_id, username, referrer=None):
     if not row:
         valid_ref = referrer if referrer and referrer != user_id else None
         con.execute(
-            "INSERT INTO users (user_id, username, points, referred_by, referrals, last_daily, task_completed, state) VALUES (?, ?, ?, ?, 0, '', 0, 'NONE')",
+            "INSERT INTO users (user_id, username, points, referred_by, referrals, last_daily, task1, task2, task3, state) VALUES (?, ?, ?, ?, 0, '', 0, 0, 0, 'NONE')",
             (user_id, username or "", START_BONUS, valid_ref)
         )
         if valid_ref:
@@ -107,10 +127,13 @@ def main_keyboard():
         ],
         [
             InlineKeyboardButton("🎁 Daily Bonus", callback_data="daily"),
-            InlineKeyboardButton("📝 Tasks (+50)", callback_data="tasks")
+            InlineKeyboardButton("📝 Corporate Tasks", callback_data="tasks")
         ],
         [
-            InlineKeyboardButton("💸 Withdraw", callback_data="withdraw"),
+            InlineKeyboardButton("📺 Watch Ads (Multiple)", callback_data="ads_menu"),
+            InlineKeyboardButton("💸 Withdraw", callback_data="withdraw")
+        ],
+        [
             InlineKeyboardButton("ℹ️ Help", callback_data="help")
         ]
     ])
@@ -129,11 +152,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     row = get_user(user.id)
 
     await update.message.reply_text(
-        f"👋 **Welcome to FreeCash Earn!**\n\n"
-        f"🎁 Starting bonus: {START_BONUS} points\n"
-        f"💰 Your balance: {row['points']} points\n"
-        f"💵 Value: ${row['points']/POINTS_PER_DOLLAR:.2f}\n\n"
-        f"Complete tasks, invite friends, and claim daily bonuses!",
+        f"🔥 **Welcome to {BOT_NAME}!** 🔥\n\n"
+        f"Earn money easily by watching ads, completing company tasks, and inviting friends!\n\n"
+        f"🎁 **Welcome Bonus:** {START_BONUS} points\n"
+        f"💰 **Your Balance:** {row['points']} points (${row['points']/POINTS_PER_DOLLAR:.2f})\n\n"
+        f"Choose an option below to start earning:",
         parse_mode="Markdown",
         reply_markup=main_keyboard()
     )
@@ -152,25 +175,25 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "balance":
         usd = row["points"] / POINTS_PER_DOLLAR
-        text = f"💰 **Your Balance Details**\n\n" \
+        text = f"💰 **Account Balance**\n\n" \
                f"• Points: **{row['points']}**\n" \
-               f"• Value: **${usd:.2f}** USD\n\n" \
-               f"Keep completing tasks and inviting friends to earn more!"
+               f"• Value: **${usd:.2f} USD**\n\n" \
+               f"Complete more tasks and watch ads to increase your earnings!"
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_keyboard())
 
     elif data == "referrals":
         bot_username = context.bot.username
         ref_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
         text = f"👥 **Referral System**\n\n" \
-               f"Earn **{REFERRAL_BONUS} points** for every friend you invite!\n\n" \
-               f"• Total Invited: **{row['referrals']}** friends\n" \
+               f"Invite friends and earn **{REFERRAL_BONUS} points** for each friend!\n\n" \
+               f"• Total Invited: **{row['referrals']}**\n" \
                f"🔗 **Your Referral Link:**\n`{ref_link}`"
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_keyboard())
 
     elif data == "daily":
         today_str = str(date.today())
         if row["last_daily"] == today_str:
-            text = "⏳ **Daily Bonus**\n\nYou have already claimed your daily bonus today! Come back tomorrow."
+            text = "⏳ **Daily Bonus**\n\nYou already claimed your daily bonus today. Come back tomorrow!"
         else:
             con = db()
             con.execute("UPDATE users SET points=points+?, last_daily=? WHERE user_id=?", (DAILY_BONUS, today_str, user_id))
@@ -181,56 +204,65 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "tasks":
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📢 Join Channel", url=CHANNEL_LINK)],
-            [InlineKeyboardButton("✅ Claim +50 Points", callback_data="claim_task")],
+            [InlineKeyboardButton("📢 Task 1: Main Channel (+50)", url=CHANNEL_1), InlineKeyboardButton("✅ Claim 1", callback_data="claim_t1")],
+            [InlineKeyboardButton("📢 Task 2: Partner Channel (+50)", url=CHANNEL_2), InlineKeyboardButton("✅ Claim 2", callback_data="claim_t2")],
+            [InlineKeyboardButton("🌐 Task 3: Visit Sponsor Site (+50)", url=WEBSITE_TASK), InlineKeyboardButton("✅ Claim 3", callback_data="claim_t3")],
             [InlineKeyboardButton("🔙 Back", callback_data="back_main")]
         ])
-        text = "📝 **Official Channel Task (+50 Points)**\n\n" \
-               "1. Click **Join Channel** button below and join the channel.\n" \
-               "2. Come back and click **Claim +50 Points** to get your reward!"
+        text = "📝 **Corporate Tasks**\n\nComplete company tasks below to earn extra points:"
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
 
-    elif data == "claim_task":
-        if row["task_completed"] == 1:
-            text = "⚠️ **Task Already Completed!**\n\nYou have already claimed the reward for this channel."
-            keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_main")]])
-            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
+    elif data in ["claim_t1", "claim_t2", "claim_t3"]:
+        t_num = data[-2:] # 't1', 't2', or 't3'
+        col = f"task{t_num[1]}"
+        if row[col] == 1:
+            await query.answer("⚠️ You already completed this task!", show_alert=True)
         else:
             con = db()
-            con.execute("UPDATE users SET points=points+?, task_completed=1 WHERE user_id=?", (TASK_BONUS, user_id))
+            con.execute(f"UPDATE users SET points=points+?, {col}=1 WHERE user_id=?", (TASK_BONUS, user_id))
             con.commit()
             con.close()
-            text = f"🎉 **Task Completed Successfully!**\n\nYou received **+{TASK_BONUS} points**!"
-            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_keyboard())
+            await query.answer(f"🎉 Success! +{TASK_BONUS} Points added!", show_alert=True)
+            await query.edit_message_text("✅ Task completed! Select another task or go back.", reply_markup=main_keyboard())
+
+    elif data == "ads_menu":
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📺 Watch Ad 1 (+20 Points)", url=AD_LINK_1)],
+            [InlineKeyboardButton("📺 Watch Ad 2 (+20 Points)", url=AD_LINK_2)],
+            [InlineKeyboardButton("📺 Watch Ad 3 (+20 Points)", url=AD_LINK_3)],
+            [InlineKeyboardButton("🔙 Back", callback_data="back_main")]
+        ])
+        text = "📺 **Sponsored Ads Station**\n\nClick any ad below to watch and support the bot!"
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
 
     elif data == "withdraw":
         usd = row["points"] / POINTS_PER_DOLLAR
-        # 🔒 MINIMUM WITHDRAWAL CHECK
         if row["points"] < MIN_WITHDRAWAL:
             text = f"🔒 **Withdrawal Locked**\n\n" \
                    f"• Minimum Limit: **{MIN_WITHDRAWAL} points** (${MIN_WITHDRAWAL/POINTS_PER_DOLLAR:.2f})\n" \
                    f"• Your Balance: **{row['points']} points** (${usd:.2f})\n\n" \
-                   f"⚠️ You need **{MIN_WITHDRAWAL - row['points']} more points** to request a payout."
+                   f"⚠️ Earn **{MIN_WITHDRAWAL - row['points']} more points** to cash out."
             await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_keyboard())
         else:
             update_state(user_id, "WAITING_WITHDRAW_ADDRESS")
             text = f"💸 **Withdrawal Request**\n\n" \
                    f"Your Balance: **{row['points']} points** (${usd:.2f})\n\n" \
-                   f"Please reply with your payment address (e.g., USDT TRC20, Zaad, or eDahab number):"
+                   f"Please send your payout number/address (e.g., Zaad, eDahab, USDT TRC20):"
             await query.edit_message_text(text, parse_mode="Markdown")
 
     elif data == "help":
-        text = "ℹ️ **Help & Support**\n\n" \
-               "• Earn points by completing tasks and inviting friends.\n" \
-               "• 1,000 points = $1.00 USD.\n" \
-               "• Minimum withdrawal limit is 20,000 points ($20.00)."
+        text = f"ℹ️ **Help Center**\n\n" \
+               f"• {POINTS_PER_DOLLAR} Points = $1.00 USD\n" \
+               f"• Complete tasks and watch ads daily.\n" \
+               f"• Minimum payout limit: {MIN_WITHDRAWAL} points."
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_keyboard())
 
     elif data == "back_main":
         await query.edit_message_text("👋 **Main Menu**", parse_mode="Markdown", reply_markup=main_keyboard())
 
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    user = update.effective_user
+    user_id = user.id
     row = get_user(user_id)
 
     if row and row["state"] == "WAITING_WITHDRAW_ADDRESS":
@@ -247,11 +279,23 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         con.commit()
         con.close()
 
+        # 📩 ADIGO EE ADMIN-KA AH OGEEYSIIN TOOS AH IGO SOO DHIBA
+        admin_msg = f"🚨 **NEW WITHDRAWAL REQUEST!** 🚨\n\n" \
+                    f"👤 **User:** @{user.username or 'No Username'} (ID: `{user_id}`)\n" \
+                    f"💰 **Amount:** {points} points (${usd:.2f} USD)\n" \
+                    f"📲 **Payment Address:** `{address}`\n" \
+                    f"📅 **Date:** {date.today()}"
+        
+        try:
+            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg, parse_mode="Markdown")
+        except Exception as e:
+            print(f"Could not send notification to admin: {e}")
+
         await update.message.reply_text(
-            f"✅ **Withdrawal Submitted!**\n\n"
+            f"✅ **Withdrawal Request Received!**\n\n"
             f"• Points Deducted: **{points}** (${usd:.2f})\n"
             f"• Address/Number: `{address}`\n\n"
-            f"Your request is being reviewed by the admin team.",
+            f"Your payout is being processed by the Admin.",
             parse_mode="Markdown",
             reply_markup=main_keyboard()
         )
@@ -272,4 +316,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
