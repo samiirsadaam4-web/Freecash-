@@ -2,12 +2,12 @@ import telebot
 import time
 import random
 
-API_TOKEN = '8698335185:AAE5_Wokrl0VV-eQQYIFXbvCganr0qSH48Q'
+API_TOKEN = 'TOKEN_KAAGA_CUSUB_HARKAN_KU_DHAGI'
 bot = telebot.TeleBot(API_TOKEN)
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    bot.reply_to(message, "🎰 **1xBET PREDICTOR & HACK BOT** 🎰\n\nQor amarka `/predict` si aad u hesho predictor-ka ama signal-ka xiga!")
+    bot.reply_to(message, "🎰 **1xBET PREDICTOR & HACK BOT** 🎰\n\nQor amarka `/predict` si aad u bilowdo!")
 
 @bot.message_handler(commands=['predict'])
 def fake_1xbet_hack(message):
@@ -20,7 +20,6 @@ def fake_1xbet_hack(message):
     bot.edit_message_text("🔓 **Bypassing Anti-Cheat Protection...**", message.chat.id, msg.message_id)
     time.sleep(2)
     
-    # Soo saar nambaro iyo multiplier saas ah (Random/Fake)
     fake_odd = round(random.uniform(1.50, 12.80), 2)
     fake_win = round(random.uniform(85, 99), 1)
     
@@ -36,5 +35,3 @@ def fake_1xbet_hack(message):
     bot.edit_message_text(text, message.chat.id, msg.message_id, parse_mode="Markdown")
 
 bot.polling()
-
-
